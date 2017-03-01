@@ -15,6 +15,9 @@ public enum EventSourceState {
 }
 
 open class EventSource: NSObject, URLSessionDataDelegate {
+    
+    public typealias RedirectionClosure = (URLRequest, URLSession) -> (URLRequest)
+    
 	static let DefaultsKey = "com.inaka.eventSource.lastEventId"
 
     let url: URL
@@ -34,11 +37,12 @@ open class EventSource: NSObject, URLSessionDataDelegate {
     internal let receivedDataBuffer: NSMutableData
 	fileprivate let uniqueIdentifier: String
     fileprivate let validNewlineCharacters = ["\r\n", "\n", "\r"]
+    let redirectionHandler: RedirectionClosure?
 
     var event = Dictionary<String, String>()
 
 
-    public init(url: String, headers: [String : String] = [:]) {
+    public init(url: String, headers: [String : String] = [:], onRedirection: RedirectionClosure? = nil) {
 
         self.url = URL(string: url)!
         self.headers = headers
@@ -57,6 +61,7 @@ open class EventSource: NSObject, URLSessionDataDelegate {
 
 		self.uniqueIdentifier = "\(self.url.scheme).\(host).\(port).\(relativePath)"
 		self.lastEventIDKey = "\(EventSource.DefaultsKey).\(self.uniqueIdentifier)"
+        self.redirectionHandler = onRedirection
 
         super.init()
         self.connect()
@@ -198,6 +203,17 @@ open class EventSource: NSObject, URLSessionDataDelegate {
                 self.errorBeforeSetErrorCallBack = error as? NSError
             }
         }
+    }
+    
+    // MARK: - HTTPRedirection
+    
+    open func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let redirectionHandler = redirectionHandler else {
+            completionHandler(request)
+            return
+        }
+        let newRequest = redirectionHandler(request, session)
+        completionHandler(newRequest)
     }
 
 //MARK: Helpers
